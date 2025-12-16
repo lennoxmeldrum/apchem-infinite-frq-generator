@@ -1,18 +1,18 @@
 export enum Unit {
-  Kinematics = "Unit 1: Kinematics",
-  Dynamics = "Unit 2: Force and Translational Dynamics",
-  WorkEnergy = "Unit 3: Work, Energy, and Power",
-  Momentum = "Unit 4: Linear Momentum",
-  Rotation = "Unit 5: Torque and Rotational Dynamics",
-  Rolling = "Unit 6: Energy and Momentum of Rotating Systems",
-  Oscillations = "Unit 7: Oscillations"
+  Atomic = "Unit 1: Atomic Structure and Properties",
+  Molecular = "Unit 2: Molecular and Ionic Compound Structure and Properties",
+  Intermolecular = "Unit 3: Intermolecular Forces and Properties",
+  Reactions = "Unit 4: Chemical Reactions",
+  Kinetics = "Unit 5: Kinetics",
+  Thermo = "Unit 6: Thermodynamics",
+  Equilibrium = "Unit 7: Equilibrium",
+  Acids = "Unit 8: Acids and Bases",
+  Electro = "Unit 9: Thermodynamics and Electrochemistry"
 }
 
 export enum FRQType {
-  MR = "Mathematical Routines (MR)",
-  TBR = "Translation Between Representations (TBR)",
-  LAB = "Experimental Design and Analysis (LAB)",
-  QQT = "Qualitative/Quantitative Translation (QQT)"
+  Short = "Short Answer (4 pts)",
+  Long = "Long Answer (10 pts)"
 }
 
 export interface SubTopic {
@@ -28,7 +28,7 @@ export interface UnitData {
 
 export interface FRQMetadata {
   frqType: FRQType;
-  frqTypeShort: string; // "MR", "TBR", "LAB", "QQT"
+  frqTypeShort: string; // "Short", "Long"
   unit: Unit;
   selectedSubTopics: string[]; // All topics the user clicked
   actualSubTopics?: string[]; // The specific topics the AI actually used
