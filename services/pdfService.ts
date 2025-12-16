@@ -29,7 +29,7 @@ export const getSubUnitsString = (selected: string[], actual?: string[]): string
 export const generatePDFFilename = (frq: GeneratedFRQ): string => {
   const { frqTypeShort, selectedSubTopics, actualSubTopics } = frq.metadata;
   const subUnitsStr = getSubUnitsString(selectedSubTopics, actualSubTopics);
-  return `AP PCM FRQ - ${frqTypeShort} - ${subUnitsStr}.pdf`;
+  return `AP Chem FRQ - ${frqTypeShort} - ${subUnitsStr}.pdf`;
 };
 
 const KATEX_FONT_FAMILIES = [
