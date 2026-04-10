@@ -14,22 +14,39 @@ interface ChatMessage {
 export const getSubUnitsString = (selected: string[], actual?: string[]): string => {
   const topicsToDisplay = actual && actual.length > 0 ? actual : selected;
 
-  if (!topicsToDisplay || topicsToDisplay.length === 0) return '';
-  if (topicsToDisplay.length === 1) return `unit ${topicsToDisplay[0]}`;
+  if (!topicsToDisplay || topicsToDisplay.length === 0) return 'random';
+  if (topicsToDisplay.length === 1) return `topic ${topicsToDisplay[0]}`;
 
   // Sort naturally to keep things tidy (e.g. 1.1, 1.2, 1.10)
   const sorted = [...topicsToDisplay].sort((a, b) =>
     a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
   );
 
-  return `unit ${sorted.join(', ')}`;
+  return `topics ${sorted.join(', ')}`;
 };
 
-// Generate filename for PDF
+// Generate filename for PDF (user-facing download filename — deterministic).
+// Prefix normalized to all-caps `AP CHEM FRQ` to match the sibling Physics
+// and Psychology generators.
 export const generatePDFFilename = (frq: GeneratedFRQ): string => {
   const { frqTypeShort, selectedSubTopics, actualSubTopics } = frq.metadata;
   const subUnitsStr = getSubUnitsString(selectedSubTopics, actualSubTopics);
-  return `AP Chem FRQ - ${frqTypeShort} - ${subUnitsStr}.pdf`;
+  return `AP CHEM FRQ - ${frqTypeShort} - ${subUnitsStr}.pdf`;
+};
+
+// Generate archive filename for Firebase Storage — adds a UTC timestamp
+// suffix (YYYYMMDD-HHmmss-ms) so identical selections never collide and
+// silently overwrite one another in the archive bucket. The user-facing
+// download filename is unchanged; only the storage path is made unique.
+export const generateArchiveFilename = (frq: GeneratedFRQ): string => {
+  const base = generatePDFFilename(frq).replace(/\.pdf$/i, '');
+  const now = new Date();
+  const pad = (n: number, w = 2) => String(n).padStart(w, '0');
+  const stamp =
+    `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +
+    `-${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}` +
+    `-${pad(now.getUTCMilliseconds(), 3)}`;
+  return `${base} - ${stamp}.pdf`;
 };
 
 const KATEX_FONT_FAMILIES = [

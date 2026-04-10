@@ -27,33 +27,114 @@ const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 // We use the Thinking model for complex chemistry generation
 const MODEL_NAME = 'gemini-3-pro-preview';
-const VISION_MODEL_NAME = 'gemini-3-pro-preview'; 
+const VISION_MODEL_NAME = 'gemini-3-pro-preview';
 const IMAGE_GEN_MODEL = 'gemini-3-pro-image-preview';
+
+// ---------- Topic helpers ----------
+
+const ALL_SUBTOPICS: { id: string; name: string; unitId: Unit; unitName: string }[] =
+  UNITS.flatMap(u => u.subTopics.map(s => ({ id: s.id, name: s.name, unitId: u.id, unitName: u.name })));
+
+const pickRandomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+/**
+ * Pick 3-5 random topics across the whole AP Chemistry pool.
+ * Used when the user clicks Generate without selecting anything.
+ */
+export const pickRandomSubTopicSelection = (): string[] => {
+  const count = pickRandomInt(3, 5);
+  const shuffled = [...ALL_SUBTOPICS].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count).map(s => s.id);
+};
+
+/**
+ * Given the user's (possibly empty) selections, resolve the permissible topic pool.
+ * - If nothing was selected: returns a random 3-5 topic pool with wasRandom=true.
+ * - If units-only were selected: expands to all sub-topics in those units.
+ * - Otherwise passes through the explicit sub-topic selection.
+ */
+const resolveTopicPool = (
+  selectedUnits: Unit[],
+  selectedSubTopics: string[]
+): { subTopicIds: string[]; wasRandom: boolean } => {
+  if (selectedUnits.length === 0 && selectedSubTopics.length === 0) {
+    return { subTopicIds: pickRandomSubTopicSelection(), wasRandom: true };
+  }
+  if (selectedSubTopics.length === 0 && selectedUnits.length > 0) {
+    const ids = ALL_SUBTOPICS.filter(s => selectedUnits.includes(s.unitId)).map(s => s.id);
+    return { subTopicIds: ids, wasRandom: false };
+  }
+  return { subTopicIds: selectedSubTopics, wasRandom: false };
+};
+
+/**
+ * Build a human-readable topic context block for the prompt, grouped by unit.
+ */
+const formatTopicContext = (subTopicIds: string[]): string => {
+  const byUnit = new Map<Unit, { unitName: string; topics: { id: string; name: string }[] }>();
+  for (const id of subTopicIds) {
+    const meta = ALL_SUBTOPICS.find(s => s.id === id);
+    if (!meta) continue;
+    if (!byUnit.has(meta.unitId)) {
+      byUnit.set(meta.unitId, { unitName: meta.unitName, topics: [] });
+    }
+    byUnit.get(meta.unitId)!.topics.push({ id: meta.id, name: meta.name });
+  }
+  const lines: string[] = [];
+  for (const [, { unitName, topics }] of byUnit) {
+    lines.push(`- ${unitName}`);
+    for (const t of topics) {
+      lines.push(`    - ${t.id} ${t.name}`);
+    }
+  }
+  return lines.join('\n');
+};
 
 export const generateFRQ = async (
   type: FRQType,
-  unit: Unit,
+  selectedUnits: Unit[],
   selectedSubTopics: string[]
 ): Promise<GeneratedFRQ> => {
-  
-  // Calculate excluded topics based on what was selected
-  const unitData = UNITS.find(u => u.id === unit);
-  const allSubTopics = unitData ? unitData.subTopics.map(s => s.id) : [];
-  const excludedSubTopics = allSubTopics.filter(id => !selectedSubTopics.includes(id));
-  
-  const subTopicInstruction = excludedSubTopics.length > 0 
-    ? `IMPORTANT: EXCLUDE the following sub-topics from the question content: ${excludedSubTopics.join(', ')}. Focus ONLY on the selected sub-topics.` 
-    : "You may include any relevant sub-topics within this unit.";
+
+  const { subTopicIds, wasRandom } = resolveTopicPool(selectedUnits, selectedSubTopics);
+  const topicContext = formatTopicContext(subTopicIds);
 
   const totalPoints = FRQ_POINT_TOTALS[type];
 
   const prompt = `
-    You are an expert AP Chemistry exam writer.
-    Create a unique, college-level Free Response Question (FRQ) of type "${type}" for "${unit}".
-    ${subTopicInstruction}
+    You are an experienced College Board AP Chemistry exam writer and rubric designer.
+    Your task is to produce one authentic, exam-quality Free Response Question in the
+    STRICT format used on the AP Chemistry exam (current CED).
 
-    Adhere strictly to the College Board style for AP Chemistry.
+    === CONTENT SCOPE ===
+    Permissible topic pool (draw ONLY from these):
+${topicContext}
 
+    Rules for content scope:
+    - Every chemistry concept tested in the question or named in the rubric MUST come
+      from this pool.
+    - If the pool spans more than one unit, favor a question that naturally integrates
+      concepts across at least two of the listed topics (the current CED explicitly
+      rewards cross-unit integration: e.g. stoichiometry + thermodynamics, or
+      equilibrium + acid-base).
+    - Do not drift into adjacent topics that are not in the pool.
+    - Return "usedSubTopics" as an array of the topic IDs (e.g. ["3.2","6.4"]) that the
+      question and rubric actually draw upon.
+
+    === COURSE CONTEXT (CED) ===
+    AP Chemistry covers 9 units: (1) Atomic Structure and Properties, (2) Molecular
+    and Ionic Compound Structure and Properties, (3) Intermolecular Forces and
+    Properties, (4) Chemical Reactions, (5) Kinetics, (6) Thermodynamics, (7)
+    Equilibrium, (8) Acids and Bases, (9) Applications of Thermodynamics. The exam
+    features two FRQ types: Long Answer (10 points, multipart, integrating several
+    units) and Short Answer (4 points, focused on a single phenomenon or skill). The
+    course emphasizes six Science Practices — especially model use (Lewis structures,
+    particulate diagrams, PES spectra, reaction-coordinate diagrams, titration
+    curves), mathematical routines, and experimental design/analysis. Students are
+    expected to write claims supported by evidence and reasoning in words as well as
+    mathematical or symbolic form.
+
+    === FRQ TYPE: "${type}" ===
     TOTAL POINTS FOR THIS QUESTION: ${totalPoints}.
     Distribute these points reasonably among the parts.
 
@@ -262,9 +343,10 @@ export const generateFRQ = async (
       metadata: {
         frqType: type,
         frqTypeShort: getFRQTypeShort(type),
-        unit: unit,
-        selectedSubTopics: selectedSubTopics,
-        actualSubTopics: data.usedSubTopics || []
+        selectedUnits,
+        selectedSubTopics,
+        actualSubTopics: Array.isArray(data.usedSubTopics) ? data.usedSubTopics : [],
+        wasRandom
       }
     };
 
@@ -274,37 +356,196 @@ export const generateFRQ = async (
   }
 };
 
+// ---------- Grading ----------
+
+export const STUDENT_RESPONSE_EXTRACTION_RULES = `
+=== STUDENT RESPONSE EXTRACTION RULES (READ BEFORE GRADING) ===
+
+You are looking at a scanned or photographed handwritten student response to an AP
+Chemistry FRQ. Before you grade anything, you must first EXTRACT what the student
+actually wrote. Follow these rules exactly.
+
+1. CRITICAL: EXACT EXTRACTION ONLY.
+   Extract exactly what the student wrote. NEVER summarise, paraphrase, interpret, or
+   substitute your own understanding of what the student meant. The marker must see the
+   student's actual words and working, not a cleaned-up or interpreted version. The
+   difference between what a student wrote and what they meant to write can be the
+   difference between awarding and withholding marks. Permitted minor corrections:
+   normalising clearly sloppy letterforms (e.g. a sloppy "H" clearly meant as "H" in a
+   bond-line structure), standard sub/superscript formatting (H2O → H₂O, Na+ → Na⁺),
+   standard math symbols (triangle symbol → ∆). NEVER replace an incorrect chemical
+   formula with the correct one, balance an unbalanced equation the student left
+   unbalanced, fill in skipped steps, rephrase a verbal answer, silently correct wrong
+   element symbols or charges, or add any words the student did not write.
+
+2. IGNORE THE OCR LAYER.
+   Scanned PDFs often carry a machine OCR text layer — it is generally poor quality and
+   (for chemistry especially, with subscripts and charges) often wrong. Disregard it
+   entirely and read the page visually.
+
+3. SURVEY EACH PAGE HOLISTICALLY BEFORE EXTRACTING.
+   Look for arrows indicating continuation order, bracket/brace markers grouping
+   content, crossing-out or deletion marks, margin annotations vs. main answer, and
+   flag symbols or letters marking where a new question begins.
+
+4. SCAN THE ENTIRE PDF FOR EACH QUESTION BEFORE FINALISING.
+   Students routinely continue a response on a later page, in a margin, on the blank
+   back of a previous page, or on additional loose paper. Check every page of the PDF
+   for labelled continuations ("Q2(c) continued", "see page 4"), for arrows pointing
+   off the edge of a page, for work written on a page designated for a different
+   question but labelled for this one, and for unlabelled work on blank/gap pages that
+   logically continues a previous response.
+
+5. FOLLOW STUDENT-INDICATED READING ORDER.
+   Arrows, circles, numbered flags, and "(continued here)" markers indicate non-linear
+   reading order. When in doubt, use the order that makes the chemical reasoning
+   logically coherent.
+
+6. CROSSED-OUT WORK IS NOT PART OF THE ANSWER.
+   - Single line through: minor correction, discard the struck-out portion.
+   - Large diagonal cross (X) or scribble over a block: fully retracted — do NOT grade
+     that content, even if it looks correct.
+   - Two uncrossed competing attempts: grade the LAST attempt.
+   Note crossed-out sections briefly (e.g. "[crossed-out working omitted]") so the
+   marker knows they exist, but do not include their content.
+
+7. NEVER FILL GAPS.
+   If the student wrote nothing for a part, record "[no response]" and award 0 points.
+   Do not grade what they might have meant.
+
+8. CHEMICAL FORMULAS AND EQUATIONS.
+   - Preserve the exact symbols the student wrote. Distinguish carefully between
+     uppercase and lowercase (Co = cobalt vs CO = carbon monoxide; Mg vs mg; Hg vs hg).
+   - Preserve subscripts and superscripts faithfully (H₂O, CO₃²⁻, NH₄⁺). If the
+     student wrote H2O with no subscript, note that the "2" was not subscripted.
+   - Preserve state symbols exactly as written ((s), (l), (g), (aq)). Note missing
+     state symbols — they are often required by the rubric.
+   - Preserve the exact coefficient the student wrote in a balanced equation. DO NOT
+     silently re-balance an unbalanced equation for them.
+   - Distinguish the student's use of → vs ⇌ (reaction arrows). Equilibrium vs
+     one-way arrow selection is frequently scored.
+   - For ionic charges, reproduce exactly what is written (Fe²⁺ vs Fe⁺² vs Fe+2 —
+     preserve the student's ordering and positioning).
+
+9. LEWIS STRUCTURES AND PARTICULATE DIAGRAMS.
+   Lewis structures and particulate-level diagrams carry significant scoring weight.
+   For each Lewis structure:
+   - Identify the central atom and peripheral atoms.
+   - Count the total number of bonds drawn between each pair of atoms (single, double,
+     triple). State exactly what the student drew, not what the correct structure would
+     be.
+   - Count the lone pairs shown on each atom. Note missing lone pairs on atoms that
+     require them.
+   - Note any formal charges or partial charges (δ+, δ−) the student labelled.
+   - If the student drew multiple resonance structures, extract each one separately.
+   For particulate diagrams (e.g. before/after of a reaction, solutions with
+   dissociated ions):
+   - Count the number of each type of particle by label.
+   - Note whether ions are shown separated (dissociated) or still bonded.
+   - Describe the spatial distribution if it is relevant to the question (clustered,
+     evenly distributed, etc.).
+   - Note extraneous particles or missing particles relative to what the question setup
+     implies.
+
+10. DATA TABLES AND CALCULATIONS.
+    If the student produced a numerical table (common in lab-analysis problems),
+    extract it as a Markdown table preserving their exact column headers (including
+    units) and all numerical values. Note blank or illegible cells. For calculations,
+    preserve every intermediate line of working — do not collapse steps. Note the
+    units the student wrote at each step and whether unit tracking is consistent.
+
+11. GRAPHS (titration curves, reaction progress, kinetics plots).
+    Describe: axis labels and units (reproduce verbatim); pre-printed vs student-added
+    scale values; starting and ending coordinates of the curve; key features (plateaus,
+    inflection points, equivalence points the student labelled); whether the curve
+    shape is concave up/down/sigmoidal/linear; any annotations (half-equivalence,
+    pKa, activation energy Ea, ∆H); and the exact position of labelled points.
+
+12. SELECTION-AND-JUSTIFY AND CLAIM–EVIDENCE–REASONING.
+    Many AP Chem parts ask the student to choose (e.g. "which substance has the
+    higher boiling point") and justify with a specific intermolecular force, bond
+    energy, or trend. Extract the selection FIRST (e.g. "Selected: NH₃"), then
+    extract the justification separately and verbatim. Scoring often separates the
+    claim from the reasoning — do not merge them.
+
+13. MULTI-PAGE CONTINUATIONS.
+    If Part (c) begins on page 2 and continues on page 4 via an arrow, the full
+    response for Part (c) is the concatenation of both regions in the order indicated.
+
+14. PART LABELING.
+    Identify which student writing corresponds to which part using the student's own
+    labels where present, and spatial cues (paragraph breaks, blank lines) otherwise.
+    Do not merge parts.
+
+15. CHEMISTRY SYMBOL DISAMBIGUATION (use for reading, never to "correct" the student).
+    - Element ambiguity: Co vs CO, Cu vs CU, Mg vs Mg etc. — preserve case exactly.
+    - K can mean potassium (element), equilibrium constant, or Kelvin — use context.
+    - Uppercase M (molarity, molar mass) vs lowercase m (mass, molality).
+    - ΔH vs ∆H (same thing, both acceptable) — preserve what the student wrote.
+    - Degree symbol in temperatures (25°C vs 25 C) — preserve.
+
+Record the per-part extraction in the "extractedResponse" field as plain text with one
+labeled block per part, e.g.:
+
+  Part (a): <verbatim text>
+  Part (b): <verbatim text>
+  ...
+
+=== END EXTRACTION RULES ===
+`;
+
 export const gradeSubmission = async (
   frq: GeneratedFRQ,
   submissionBase64: string,
   mimeType: string
 ): Promise<AssessmentResult> => {
-  
+
   const userContentPart = {
       inlineData: {
-          mimeType: mimeType, 
+          mimeType: mimeType,
           data: submissionBase64
       }
   };
 
+  // Pass a curated FRQ payload (no metadata bloat)
+  const frqPayload = JSON.stringify({
+    frqType: frq.metadata.frqTypeShort,
+    questionText: frq.questionText,
+    parts: frq.parts,
+    scoringGuide: frq.scoringGuide,
+    maxPoints: frq.maxPoints
+  }, null, 2);
+
   const prompt = `
-    You are an AP Chemistry Reader (Grader).
-    
-    Here is the Question and Scoring Guide:
-    ${JSON.stringify(frq)}
+You are an AP Chemistry Reader (Grader).
 
-    Here is the Student's Submission (see attached).
+${STUDENT_RESPONSE_EXTRACTION_RULES}
 
-    Task:
-    1. Score the submission strictly according to the provided scoring guide.
-    2. Provide specific feedback for each part, explaining why points were earned or lost.
-    3. Calculate the total score.
-    4. Format your feedback using Markdown and LaTeX for math ($...$). 
-    
-    IMPORTANT: Ensure the feedback uses standard Markdown formatting (bold, bullet points) and proper LaTeX delimiters for math.
+=== QUESTION + RUBRIC ===
+${frqPayload}
 
-    Format output as JSON.
-  `;
+=== TASK ===
+STEP 1: Apply the extraction rules above to the attached student submission. Produce
+        a clean per-part extraction of what the student actually wrote — verbatim,
+        preserving chemical formulas, state symbols, arrow types, charges, and
+        diagrams as specified — before grading.
+STEP 2: Grade each part strictly per the scoring guide. Award points only for what
+        the student actually wrote (not what you think they meant). Quote the
+        student's extracted writing when explaining a point decision.
+STEP 3: Provide a concise feedback paragraph per part explaining why points were
+        earned or lost, referencing the rubric language.
+STEP 4: Compute the total score out of ${frq.maxPoints}. Never exceed ${frq.maxPoints}.
+STEP 5: Use Markdown formatting (bold, bullet points) and LaTeX for math and chemical
+        formulas wrapped in single dollar signs (e.g. $K_a = \\frac{[H^+][A^-]}{[HA]}$,
+        $\\text{H}_2\\text{O}(l)$).
+
+Output JSON with:
+  score: number (0-${frq.maxPoints})
+  maxScore: ${frq.maxPoints}
+  feedback: markdown string with per-part headings
+  breakdown: compact table: Part | Points awarded | Max | Reason
+  extractedResponse: plain text per-part extraction
+`;
 
   try {
     const response = await ai.models.generateContent({
@@ -316,7 +557,7 @@ export const gradeSubmission = async (
             ]
         },
         config: {
-            thinkingConfig: { thinkingBudget: 1024 },
+            thinkingConfig: { thinkingBudget: 2048 },
             responseMimeType: "application/json",
             responseSchema: {
                 type: Type.OBJECT,
@@ -324,8 +565,10 @@ export const gradeSubmission = async (
                     score: { type: Type.NUMBER },
                     maxScore: { type: Type.NUMBER },
                     feedback: { type: Type.STRING },
-                    breakdown: { type: Type.STRING }
-                }
+                    breakdown: { type: Type.STRING },
+                    extractedResponse: { type: Type.STRING }
+                },
+                required: ["score", "maxScore", "feedback", "breakdown", "extractedResponse"]
             }
         }
     });
