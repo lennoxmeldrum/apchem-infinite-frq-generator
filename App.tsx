@@ -83,8 +83,13 @@ const App: React.FC = () => {
     setResult(null);
   };
 
+  // SelectionScreen grows with its content and uses the browser scrollbar.
+  // QuestionView / ResultsView / Loading are locked to the viewport so their
+  // internal panels (chat, results pane, question parts) handle their own scroll.
+  const isFixedViewport = appState !== 'SELECTION';
+
   return (
-    <div className="h-full bg-gray-50">
+    <div className={`${isFixedViewport ? 'h-screen overflow-hidden' : 'min-h-screen'} bg-gray-50`}>
       {appState === 'SELECTION' && <SelectionScreen onGenerate={handleGenerate} />}
       {(appState === 'GENERATING' || appState === 'GRADING') && <Loading message={loadingMsg} />}
       {appState === 'QUESTION' && currentFRQ && (
