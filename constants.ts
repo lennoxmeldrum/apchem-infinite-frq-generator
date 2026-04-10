@@ -1,5 +1,11 @@
 import { Unit, UnitData, FRQType } from './types';
 
+// Stable, lowercase slug for this subject. Written on every Firestore
+// doc via saveFRQToFirestore so the shared access site (ap-frq-access)
+// can filter `frqs` by subject. Never change this value — if you do,
+// legacy docs become invisible in the access site until backfilled.
+export const SUBJECT_SLUG = 'chemistry' as const;
+
 export const FRQ_POINT_TOTALS: Record<FRQType, number> = {
   [FRQType.Short]: 4,
   [FRQType.Long]: 10
