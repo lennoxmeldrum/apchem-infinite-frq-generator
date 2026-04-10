@@ -1,6 +1,6 @@
 import { getStorage, ref, uploadBytes, FirebaseStorage } from 'firebase/storage';
 import { GeneratedFRQ } from '../types';
-import { generateStoragePDF, generatePDFFilename } from './pdfService';
+import { generateStoragePDF, generateArchiveFilename } from './pdfService';
 import { getFirebaseAppWithAuth, isStorageConfigured } from './firebaseService';
 
 let storage: FirebaseStorage | null = null;
@@ -34,15 +34,17 @@ export const uploadFRQToStorage = async (frq: GeneratedFRQ): Promise<string | nu
 
   try {
     const pdfBlob = await generateStoragePDF(frq);
-    const filename = generatePDFFilename(frq);
+    const filename = generateArchiveFilename(frq);
     const storageRef = ref(storageInstance, `frq-archive/${filename}`);
 
     const snapshot = await uploadBytes(storageRef, pdfBlob, {
       contentType: 'application/pdf',
       customMetadata: {
         frqType: frq.metadata.frqTypeShort,
-        unit: frq.metadata.unit,
-        subTopics: frq.metadata.selectedSubTopics.join(', '),
+        selectedUnits: frq.metadata.selectedUnits.join(','),
+        selectedSubTopics: frq.metadata.selectedSubTopics.join(','),
+        actualSubTopics: frq.metadata.actualSubTopics.join(','),
+        wasRandom: frq.metadata.wasRandom ? 'true' : 'false',
         maxPoints: frq.maxPoints.toString(),
         generatedAt: new Date().toISOString()
       }

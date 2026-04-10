@@ -28,10 +28,11 @@ export interface UnitData {
 
 export interface FRQMetadata {
   frqType: FRQType;
-  frqTypeShort: string; // "Short", "Long"
-  unit: Unit;
-  selectedSubTopics: string[]; // All topics the user clicked
-  actualSubTopics?: string[]; // The specific topics the AI actually used
+  frqTypeShort: string;        // "Short", "Long"
+  selectedUnits: Unit[];       // Units the user explicitly picked (may be empty)
+  selectedSubTopics: string[]; // Topic IDs the user explicitly picked (may be empty)
+  actualSubTopics: string[];   // Topic IDs the model reports it actually used
+  wasRandom: boolean;          // True if no selection and random fallback was used
 }
 
 export interface GeneratedFRQ {
@@ -55,6 +56,7 @@ export interface AssessmentResult {
   maxScore: number;
   feedback: string;
   breakdown: string;
+  extractedResponse?: string; // Per-part verbatim extraction of the student submission
 }
 
 export type AppState = 'SELECTION' | 'GENERATING' | 'QUESTION' | 'GRADING' | 'RESULTS';

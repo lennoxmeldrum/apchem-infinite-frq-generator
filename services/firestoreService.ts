@@ -44,8 +44,10 @@ export const saveFRQToFirestore = async (
       metadata: {
         frqType: frq.metadata.frqType,
         frqTypeShort: frq.metadata.frqTypeShort,
-        unit: frq.metadata.unit,
-        selectedSubTopics: frq.metadata.selectedSubTopics
+        selectedUnits: frq.metadata.selectedUnits,
+        selectedSubTopics: frq.metadata.selectedSubTopics,
+        actualSubTopics: frq.metadata.actualSubTopics,
+        wasRandom: frq.metadata.wasRandom
       },
       storagePath: storagePath || null,
       createdAt: serverTimestamp()
