@@ -32,7 +32,7 @@ images:
 
 # Substitution variables - set these in your Cloud Build trigger
 substitutions:
-  _FIREBASE_API_KEY: 'AIzaSyBy0BvarIrW1PLb1IdH30MfvXQ2wJrE2oMAIzaSyBy0BvarIrW1PLb1IdH30MfvXQ2wJrE2oM'
+  _FIREBASE_API_KEY: 'AIzaSyBy0BvarIrW1PLb1IdH30MfvXQ2wJrE2oM'
   _FIREBASE_AUTH_DOMAIN: 'unique-sentinel-423412-q3.firebaseapp.com'
   _FIREBASE_PROJECT_ID: 'unique-sentinel-423412-q3'
   _FIREBASE_STORAGE_BUCKET: 'unique-sentinel-423412-q3.firebasestorage.app'
